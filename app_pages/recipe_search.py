@@ -7,14 +7,18 @@ from services.storage import save_state
 state = st.session_state.app_state
 
 
-def _week_dates() -> list[date]:
+def _week_dates(offset: int = 0) -> list[date]:
     today = date.today()
-    monday = today - timedelta(days=today.weekday())
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
     return [monday + timedelta(days=i) for i in range(7)]
 
 
-WEEK = _week_dates()
-DAY_OPTIONS = {d.strftime("%A, %b %d"): d for d in WEEK}
+st.session_state.setdefault("week_offset", 0)
+current_week = _week_dates(st.session_state.week_offset)
+next_week = _week_dates(st.session_state.week_offset + 1)
+DAY_OPTIONS = {}
+for d in current_week + next_week:
+    DAY_OPTIONS[d.strftime("%A, %b %d")] = d
 
 
 @st.dialog("Assign to day", width="small")

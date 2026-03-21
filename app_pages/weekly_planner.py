@@ -4,15 +4,16 @@ from models import DinnerSlot, Recipe, EatOutMeal
 from services.storage import save_state
 
 state = st.session_state.app_state
+st.session_state.setdefault("week_offset", 0)
 
 
-def _week_dates() -> list[date]:
+def _week_dates(offset: int = 0) -> list[date]:
     today = date.today()
-    monday = today - timedelta(days=today.weekday())
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
     return [monday + timedelta(days=i) for i in range(7)]
 
 
-WEEK = _week_dates()
+WEEK = _week_dates(st.session_state.week_offset)
 DAY_LABELS = {d: d.strftime("%A") for d in WEEK}
 
 
@@ -114,7 +115,35 @@ def _render_edit_form(day_iso: str):
         st.rerun()
 
 
-st.header(":material/calendar_today: This week's dinners")
+week_start = WEEK[0]
+week_end = WEEK[-1]
+is_current_week = st.session_state.week_offset == 0
+
+if is_current_week:
+    week_label = "This week"
+elif st.session_state.week_offset == 1:
+    week_label = "Next week"
+elif st.session_state.week_offset == -1:
+    week_label = "Last week"
+else:
+    week_label = f"Week of {week_start.strftime('%b %d')}"
+
+st.header(f":material/calendar_today: {week_label}")
+st.caption(f"{week_start.strftime('%b %d')} – {week_end.strftime('%b %d, %Y')}")
+
+nav_cols = st.columns([1, 1, 1])
+with nav_cols[0]:
+    if st.button("Previous", icon=":material/chevron_left:", use_container_width=True):
+        st.session_state.week_offset -= 1
+        st.rerun()
+with nav_cols[1]:
+    if st.button("Today", icon=":material/today:", use_container_width=True, disabled=is_current_week):
+        st.session_state.week_offset = 0
+        st.rerun()
+with nav_cols[2]:
+    if st.button("Next", icon=":material/chevron_right:", use_container_width=True):
+        st.session_state.week_offset += 1
+        st.rerun()
 
 planned = sum(1 for d in WEEK if _get_slot(d).is_planned)
 total_cal = sum(_get_slot(d).calories or 0 for d in WEEK)

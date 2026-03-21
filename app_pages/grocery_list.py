@@ -4,17 +4,18 @@ from models import GroceryItem
 from services.storage import save_state
 
 state = st.session_state.app_state
+st.session_state.setdefault("week_offset", 0)
 
 
-def _week_dates() -> list[date]:
+def _week_dates(offset: int = 0) -> list[date]:
     today = date.today()
-    monday = today - timedelta(days=today.weekday())
+    monday = today - timedelta(days=today.weekday()) + timedelta(weeks=offset)
     return [monday + timedelta(days=i) for i in range(7)]
 
 
 def _build_recipe_items() -> list[GroceryItem]:
     items = []
-    for d in _week_dates():
+    for d in _week_dates(st.session_state.week_offset):
         key = d.isoformat()
         slot = state.dinners.get(key)
         if not slot or slot.meal_type != "recipe" or not slot.recipe:
@@ -42,6 +43,8 @@ def _sync_grocery_list():
 
 
 st.header(":material/shopping_cart: Grocery list")
+week = _week_dates(st.session_state.week_offset)
+st.caption(f"For week of {week[0].strftime('%b %d')} – {week[-1].strftime('%b %d')}")
 
 _sync_grocery_list()
 
