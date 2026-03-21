@@ -5,6 +5,7 @@ import streamlit as st
 
 
 BASE_URL = "https://api.spoonacular.com"
+PREFERRED_SOURCES = ["skinnytaste.com"]
 
 
 def _api_key() -> str:
@@ -60,7 +61,18 @@ def search_recipes(
         }
         results = _do_search(params)
 
-    return results
+    return _prioritize(results)
+
+
+def _is_preferred(r: dict) -> bool:
+    url = (r.get("source_url") or "").lower()
+    return any(src in url for src in PREFERRED_SOURCES)
+
+
+def _prioritize(results: list[dict]) -> list[dict]:
+    preferred = [r for r in results if _is_preferred(r)]
+    rest = [r for r in results if not _is_preferred(r)]
+    return preferred + rest
 
 
 def _do_search(params: dict) -> list[dict]:

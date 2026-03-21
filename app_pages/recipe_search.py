@@ -1,7 +1,8 @@
 import streamlit as st
 from datetime import date, timedelta
 from models import DinnerSlot, Recipe
-from services.recipe_api import search_recipes
+from services.recipe_api import search_recipes, PREFERRED_SOURCES
+from urllib.parse import quote_plus
 from services.storage import save_state
 
 state = st.session_state.app_state
@@ -133,7 +134,11 @@ if query_display and results:
                 else:
                     st.markdown(":material/dinner_dining:")
             with info_col:
-                st.markdown(f"**{r['title']}**")
+                is_preferred = any(src in (r.get("source_url") or "").lower() for src in PREFERRED_SOURCES)
+                if is_preferred:
+                    st.markdown(f":material/star: **{r['title']}**")
+                else:
+                    st.markdown(f"**{r['title']}**")
                 meta = []
                 if r.get("total_minutes"):
                     meta.append(f":material/schedule: {r['total_minutes']} min")
@@ -157,7 +162,10 @@ if query_display and results:
                             for ing in r["ingredients"]:
                                 st.markdown(f"- {ing}")
 
-elif query_display and not results:
+if query_display:
+    st.caption(f":material/star: [Search Skinnytaste for \"{query_display}\"](https://www.skinnytaste.com/?s={quote_plus(query_display)})")
+
+if query_display and not results:
     st.info("No recipes found. Try broader terms or remove filters.", icon=":material/search_off:")
 
 if st.session_state.get("assigning_recipe") is not None:
