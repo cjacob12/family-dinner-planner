@@ -5,6 +5,7 @@ from services.recipe_api import search_recipes
 from services.storage import save_state
 
 state = st.session_state.app_state
+st.session_state.setdefault("week_offset", 0)
 
 
 def _week_dates(offset: int = 0) -> list[date]:
@@ -13,12 +14,21 @@ def _week_dates(offset: int = 0) -> list[date]:
     return [monday + timedelta(days=i) for i in range(7)]
 
 
-st.session_state.setdefault("week_offset", 0)
 current_week = _week_dates(st.session_state.week_offset)
 next_week = _week_dates(st.session_state.week_offset + 1)
 DAY_OPTIONS = {}
 for d in current_week + next_week:
     DAY_OPTIONS[d.strftime("%A, %b %d")] = d
+
+CUISINES = [
+    "", "African", "American", "British", "Chinese", "French",
+    "Greek", "Indian", "Italian", "Japanese", "Korean",
+    "Mediterranean", "Mexican", "Middle Eastern", "Thai", "Vietnamese",
+]
+DIETS = [
+    "", "Gluten Free", "Ketogenic", "Paleo",
+    "Pescetarian", "Vegan", "Vegetarian", "Whole30",
+]
 
 
 @st.dialog("Assign to day", width="small")
@@ -82,17 +92,28 @@ if not api_key or api_key == "YOUR_SPOONACULAR_API_KEY_HERE":
 with st.form("search_form"):
     query = st.text_input(
         "What are you in the mood for?",
-        placeholder="e.g. chicken tacos, pasta, stir fry",
+        placeholder="e.g. chicken tacos, pasta, salmon",
     )
-    col_btn, col_count = st.columns([2, 1])
-    with col_count:
-        num_results = st.selectbox("Results", options=[3, 6, 9, 12], index=1)
-    with col_btn:
-        searched = st.form_submit_button("Search", type="primary", use_container_width=True, icon=":material/search:")
+    with st.expander("Filters (optional)"):
+        filter_cols = st.columns(2)
+        with filter_cols[0]:
+            cuisine = st.selectbox("Cuisine", options=CUISINES, format_func=lambda x: x or "Any cuisine")
+            diet = st.selectbox("Diet", options=DIETS, format_func=lambda x: x or "No restriction")
+        with filter_cols[1]:
+            max_time = st.selectbox("Max cook time", options=[0, 15, 30, 45, 60, 90, 120], format_func=lambda x: "No limit" if x == 0 else f"{x} minutes")
+            num_results = st.selectbox("Results", options=[3, 6, 9, 12], index=2)
+
+    searched = st.form_submit_button("Search recipes", type="primary", use_container_width=True, icon=":material/search:")
 
 if searched and query.strip():
     with st.spinner("Searching recipes..."):
-        results = search_recipes(query.strip(), number=num_results)
+        results = search_recipes(
+            query.strip(),
+            number=num_results,
+            cuisine=cuisine,
+            diet=diet,
+            max_ready_time=max_time if max_time > 0 else None,
+        )
     st.session_state.search_results = results
     st.session_state.search_query = query.strip()
 
@@ -137,7 +158,7 @@ if query_display and results:
                                 st.markdown(f"- {ing}")
 
 elif query_display and not results:
-    st.info("No recipes found. Try a different search term.", icon=":material/search_off:")
+    st.info("No recipes found. Try broader terms or remove filters.", icon=":material/search_off:")
 
 if st.session_state.get("assigning_recipe") is not None:
     _assign_recipe(st.session_state["assigning_recipe"])

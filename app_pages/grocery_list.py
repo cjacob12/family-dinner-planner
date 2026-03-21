@@ -46,6 +46,22 @@ st.header(":material/shopping_cart: Grocery list")
 week = _week_dates(st.session_state.week_offset)
 st.caption(f"For week of {week[0].strftime('%b %d')} – {week[-1].strftime('%b %d')}")
 
+with st.form("add_item_form"):
+    add_cols = st.columns([4, 1])
+    with add_cols[0]:
+        new_item = st.text_input("Add an item", placeholder="e.g. olive oil, paper towels", label_visibility="collapsed")
+    with add_cols[1]:
+        add_clicked = st.form_submit_button("Add", icon=":material/add:", use_container_width=True)
+if add_clicked and new_item.strip():
+    state.grocery.append(GroceryItem(
+        name=new_item.strip(),
+        context="Manual",
+        checked=False,
+        manual=True,
+    ))
+    save_state(state)
+    st.rerun()
+
 _sync_grocery_list()
 
 recipe_items = [g for g in state.grocery if not g.manual]
@@ -54,13 +70,34 @@ total = len(state.grocery)
 checked = sum(1 for g in state.grocery if g.checked)
 
 if total == 0:
-    st.info("No items yet. Plan some dinners on the **Weekly planner** page, and ingredients will appear here automatically.", icon=":material/playlist_add:")
+    st.info("No items yet. Add items above, or plan dinners on the **Weekly planner** page and ingredients will appear here automatically.", icon=":material/playlist_add:")
     st.stop()
 
 st.caption(f"{checked} of {total} items checked off")
-
 progress = checked / total if total > 0 else 0
 st.progress(progress)
+
+if manual_items:
+    st.subheader("My items")
+    for idx, item in enumerate(state.grocery):
+        if not item.manual:
+            continue
+        col_check, col_del = st.columns([5, 1])
+        with col_check:
+            new_val = st.checkbox(
+                item.name,
+                value=item.checked,
+                key=f"grocery_{idx}",
+            )
+            if new_val != item.checked:
+                state.grocery[idx].checked = new_val
+                save_state(state)
+                st.rerun()
+        with col_del:
+            if st.button("", key=f"del_{idx}", icon=":material/close:"):
+                state.grocery.pop(idx)
+                save_state(state)
+                st.rerun()
 
 if recipe_items:
     st.subheader("From recipes")
@@ -83,43 +120,6 @@ if recipe_items:
                 state.grocery[idx].checked = new_val
                 save_state(state)
                 st.rerun()
-
-if manual_items:
-    st.subheader("Added manually")
-    for idx, item in enumerate(state.grocery):
-        if not item.manual:
-            continue
-        col_check, col_del = st.columns([5, 1])
-        with col_check:
-            new_val = st.checkbox(
-                item.name,
-                value=item.checked,
-                key=f"grocery_{idx}",
-            )
-            if new_val != item.checked:
-                state.grocery[idx].checked = new_val
-                save_state(state)
-                st.rerun()
-        with col_del:
-            if st.button("", key=f"del_{idx}", icon=":material/close:"):
-                state.grocery.pop(idx)
-                save_state(state)
-                st.rerun()
-
-st.divider()
-
-with st.form("add_item_form"):
-    new_item = st.text_input("Add an item", placeholder="e.g. olive oil, paper towels")
-    if st.form_submit_button("Add", icon=":material/add:", use_container_width=True):
-        if new_item.strip():
-            state.grocery.append(GroceryItem(
-                name=new_item.strip(),
-                context="Manual",
-                checked=False,
-                manual=True,
-            ))
-            save_state(state)
-            st.rerun()
 
 st.divider()
 

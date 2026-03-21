@@ -12,26 +12,67 @@ def _api_key() -> str:
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def search_recipes(query: str, number: int = 6) -> list[dict]:
+def search_recipes(
+    query: str,
+    number: int = 9,
+    cuisine: str = "",
+    diet: str = "",
+    meal_type: str = "",
+    max_ready_time: Optional[int] = None,
+) -> list[dict]:
     key = _api_key()
     if not key or key == "YOUR_SPOONACULAR_API_KEY_HERE":
         return []
+
+    params = {
+        "apiKey": key,
+        "query": query,
+        "number": number,
+        "addRecipeNutrition": True,
+        "addRecipeInformation": True,
+        "fillIngredients": True,
+        "instructionsRequired": True,
+    }
+    if cuisine:
+        params["cuisine"] = cuisine
+    if diet:
+        params["diet"] = diet
+    if meal_type:
+        params["type"] = meal_type
+    if max_ready_time:
+        params["maxReadyTime"] = max_ready_time
+
+    results = _do_search(params)
+
+    if not results and len(query.split()) > 2:
+        shorter = " ".join(query.split()[:2])
+        params["query"] = shorter
+        results = _do_search(params)
+
+    if not results and (cuisine or diet or meal_type or max_ready_time):
+        params = {
+            "apiKey": key,
+            "query": query,
+            "number": number,
+            "addRecipeNutrition": True,
+            "addRecipeInformation": True,
+            "fillIngredients": True,
+        }
+        results = _do_search(params)
+
+    return results
+
+
+def _do_search(params: dict) -> list[dict]:
     try:
         resp = requests.get(
             f"{BASE_URL}/recipes/complexSearch",
-            params={
-                "apiKey": key,
-                "query": query,
-                "number": number,
-                "addRecipeNutrition": True,
-                "addRecipeInformation": True,
-                "fillIngredients": True,
-            },
+            params=params,
             timeout=10,
         )
         resp.raise_for_status()
-        results = resp.json().get("results", [])
-        return [_parse_search_result(r) for r in results]
+        raw = resp.json().get("results", [])
+        return [_parse_search_result(r) for r in raw]
     except Exception:
         return []
 
