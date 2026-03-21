@@ -30,6 +30,12 @@ DIETS = [
     "", "Gluten Free", "Ketogenic", "Paleo",
     "Pescetarian", "Vegan", "Vegetarian", "Whole30",
 ]
+SORT_OPTIONS = {
+    "Best match": "popularity",
+    "Quickest": "time",
+    "Fewest calories": "calories",
+    "Healthiest": "healthiness",
+}
 
 
 @st.dialog("Assign to day", width="small")
@@ -95,14 +101,20 @@ with st.form("search_form"):
         "What are you in the mood for?",
         placeholder="e.g. chicken tacos, pasta, salmon",
     )
+    include_ingredients = st.text_input(
+        "Must include ingredients",
+        placeholder="e.g. chicken, avocado, lime (comma-separated)",
+    )
     with st.expander("Filters (optional)"):
-        filter_cols = st.columns(2)
+        filter_cols = st.columns(3)
         with filter_cols[0]:
             cuisine = st.selectbox("Cuisine", options=CUISINES, format_func=lambda x: x or "Any cuisine")
             diet = st.selectbox("Diet", options=DIETS, format_func=lambda x: x or "No restriction")
         with filter_cols[1]:
-            max_time = st.selectbox("Max cook time", options=[0, 15, 30, 45, 60, 90, 120], format_func=lambda x: "No limit" if x == 0 else f"{x} minutes")
-            num_results = st.selectbox("Results", options=[3, 6, 9, 12], index=2)
+            max_time = st.selectbox("Max cook time", options=[0, 15, 30, 45, 60, 90, 120], format_func=lambda x: "No limit" if x == 0 else f"{x} min")
+            sort_label = st.selectbox("Sort by", options=list(SORT_OPTIONS.keys()))
+        with filter_cols[2]:
+            num_results = st.selectbox("Show", options=[6, 9, 12, 18, 24], index=2, format_func=lambda x: f"{x} results")
 
     searched = st.form_submit_button("Search recipes", type="primary", use_container_width=True, icon=":material/search:")
 
@@ -114,6 +126,8 @@ if searched and query.strip():
             cuisine=cuisine,
             diet=diet,
             max_ready_time=max_time if max_time > 0 else None,
+            include_ingredients=include_ingredients.strip(),
+            sort=SORT_OPTIONS[sort_label],
         )
     st.session_state.search_results = results
     st.session_state.search_query = query.strip()
@@ -166,7 +180,7 @@ if query_display:
     st.caption(f":material/star: [Search Skinnytaste for \"{query_display}\"](https://www.skinnytaste.com/?s={quote_plus(query_display)})")
 
 if query_display and not results:
-    st.info("No recipes found. Try broader terms or remove filters.", icon=":material/search_off:")
+    st.info("No recipes found. Try broader terms, fewer ingredients, or remove filters.", icon=":material/search_off:")
 
 if st.session_state.get("assigning_recipe") is not None:
     _assign_recipe(st.session_state["assigning_recipe"])

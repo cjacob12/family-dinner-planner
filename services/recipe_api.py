@@ -12,28 +12,47 @@ def _api_key() -> str:
     return st.secrets.get("SPOONACULAR_API_KEY", "")
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def search_recipes(
-    query: str,
-    number: int = 9,
-    cuisine: str = "",
-    diet: str = "",
-    meal_type: str = "",
-    max_ready_time: Optional[int] = None,
-) -> list[dict]:
-    key = _api_key()
-    if not key or key == "YOUR_SPOONACULAR_API_KEY_HERE":
-        return []
-
-    params = {
+def _base_params(key: str, number: int) -> dict:
+    return {
         "apiKey": key,
-        "query": query,
         "number": number,
         "addRecipeNutrition": True,
         "addRecipeInformation": True,
         "fillIngredients": True,
         "instructionsRequired": True,
     }
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def search_recipes(
+    query: str,
+    number: int = 12,
+    cuisine: str = "",
+    diet: str = "",
+    meal_type: str = "",
+    max_ready_time: Optional[int] = None,
+    include_ingredients: str = "",
+    sort: str = "popularity",
+) -> list[dict]:
+    key = _api_key()
+    if not key or key == "YOUR_SPOONACULAR_API_KEY_HERE":
+        return []
+
+    fetch_n = min(number * 2, 24)
+    all_results: list[dict] = []
+    seen_ids: set[int] = set()
+
+    def _collect(hits: list[dict]):
+        for r in hits:
+            rid = r.get("id")
+            if rid and rid not in seen_ids:
+                seen_ids.add(rid)
+                all_results.append(r)
+
+    params = _base_params(key, fetch_n)
+    params["query"] = query
+    params["sort"] = sort
+    params["sortDirection"] = "desc" if sort == "popularity" else "asc"
     if cuisine:
         params["cuisine"] = cuisine
     if diet:
@@ -42,37 +61,84 @@ def search_recipes(
         params["type"] = meal_type
     if max_ready_time:
         params["maxReadyTime"] = max_ready_time
+    if include_ingredients:
+        params["includeIngredients"] = include_ingredients
 
-    results = _do_search(params)
+    _collect(_do_search(params))
 
-    if not results and len(query.split()) > 2:
-        shorter = " ".join(query.split()[:2])
-        params["query"] = shorter
-        results = _do_search(params)
+    if len(all_results) < number:
+        params2 = _base_params(key, fetch_n)
+        params2["query"] = query
+        params2["sort"] = sort
+        params2["sortDirection"] = "desc" if sort == "popularity" else "asc"
+        if include_ingredients:
+            params2["includeIngredients"] = include_ingredients
+        if cuisine:
+            params2["cuisine"] = cuisine
+        if diet:
+            params2["diet"] = diet
+        _collect(_do_search(params2))
 
-    if not results and (cuisine or diet or meal_type or max_ready_time):
-        params = {
-            "apiKey": key,
-            "query": query,
-            "number": number,
-            "addRecipeNutrition": True,
-            "addRecipeInformation": True,
-            "fillIngredients": True,
-        }
-        results = _do_search(params)
+    if len(all_results) < number and len(query.split()) > 2:
+        params3 = _base_params(key, fetch_n)
+        params3["query"] = " ".join(query.split()[:2])
+        params3["sort"] = sort
+        params3["sortDirection"] = "desc" if sort == "popularity" else "asc"
+        if include_ingredients:
+            params3["includeIngredients"] = include_ingredients
+        if cuisine:
+            params3["cuisine"] = cuisine
+        if diet:
+            params3["diet"] = diet
+        _collect(_do_search(params3))
 
-    return _prioritize(results)
+    if len(all_results) < number:
+        params4 = _base_params(key, fetch_n)
+        params4["query"] = query
+        params4["sort"] = sort
+        params4["sortDirection"] = "desc" if sort == "popularity" else "asc"
+        _collect(_do_search(params4))
+
+    ranked = _rank(all_results, query, include_ingredients)
+    return ranked[:number]
+
+
+def _rank(results: list[dict], query: str, include_ingredients: str) -> list[dict]:
+    q_words = set(query.lower().split())
+    ing_words = set()
+    if include_ingredients:
+        ing_words = {w.strip().lower() for w in include_ingredients.split(",") if w.strip()}
+
+    def _score(r: dict) -> float:
+        s = 0.0
+        title = (r.get("title") or "").lower()
+        title_words = set(title.split())
+        overlap = q_words & title_words
+        if overlap:
+            s += 10 * (len(overlap) / len(q_words))
+        if all(w in title for w in q_words):
+            s += 15
+
+        if ing_words:
+            r_ings = " ".join(r.get("ingredients") or []).lower()
+            matched = sum(1 for w in ing_words if w in r_ings)
+            s += 8 * (matched / len(ing_words))
+
+        if _is_preferred(r):
+            s += 5
+
+        agg = r.get("aggregate_likes") or r.get("spoonacular_score") or 0
+        if agg:
+            s += min(agg / 100, 3)
+
+        return s
+
+    return sorted(results, key=_score, reverse=True)
 
 
 def _is_preferred(r: dict) -> bool:
     url = (r.get("source_url") or "").lower()
     return any(src in url for src in PREFERRED_SOURCES)
-
-
-def _prioritize(results: list[dict]) -> list[dict]:
-    preferred = [r for r in results if _is_preferred(r)]
-    rest = [r for r in results if not _is_preferred(r)]
-    return preferred + rest
 
 
 def _do_search(params: dict) -> list[dict]:
@@ -115,6 +181,8 @@ def _parse_search_result(r: dict) -> dict:
         "servings": r.get("servings"),
         "description": r.get("summary", "")[:200] if r.get("summary") else "",
         "ingredients": ingredients,
+        "aggregate_likes": r.get("aggregateLikes", 0),
+        "spoonacular_score": r.get("spoonacularScore", 0),
     }
 
 
