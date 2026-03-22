@@ -1,6 +1,7 @@
 import streamlit as st
 from datetime import date, timedelta
 from models import DinnerSlot, Recipe, EatOutMeal
+from services.recipe_api import get_random_recipe
 from services.storage import save_state
 
 state = st.session_state.app_state
@@ -48,6 +49,19 @@ def _render_edit_form(day_iso: str):
     day_label = d.strftime("%A, %b %d")
     st.subheader(day_label)
 
+    with st.form(f"note_form_{day_iso}"):
+        note_val = st.text_input(
+            ":material/sticky_note_2: Day note",
+            value=slot.note,
+            placeholder="e.g. Lauren working late, Romi has soccer",
+        )
+        if st.form_submit_button("Save note", icon=":material/save:"):
+            slot.note = note_val
+            _save()
+            st.rerun()
+
+    st.divider()
+
     meal_type = st.segmented_control(
         "Meal type",
         options=["Cook at home", "Eat out"],
@@ -66,6 +80,7 @@ def _render_edit_form(day_iso: str):
                     day=day_iso,
                     meal_type="eat_out",
                     eat_out=EatOutMeal(name=name, notes=notes, estimated_calories=cals if cals > 0 else None),
+                    note=note_val,
                 )
                 _save()
                 st.session_state.pop("editing_day", None)
@@ -105,6 +120,7 @@ def _render_edit_form(day_iso: str):
                         calories_per_serving=cals if cals > 0 else None,
                         servings=servings,
                     ),
+                    note=note_val,
                 )
                 _save()
                 st.session_state.pop("editing_day", None)
@@ -112,6 +128,83 @@ def _render_edit_form(day_iso: str):
 
     if st.button("Cancel"):
         st.session_state.pop("editing_day", None)
+        st.rerun()
+
+
+@st.dialog("What should we cook?", width="large")
+def _suggest_recipe():
+    if st.button("Give me another idea", icon=":material/refresh:", use_container_width=True):
+        st.session_state.pop("suggested_recipe", None)
+        st.rerun()
+
+    if "suggested_recipe" not in st.session_state or st.session_state.suggested_recipe is None:
+        with st.spinner("Finding a dinner idea..."):
+            r = get_random_recipe(tags="dinner")
+        st.session_state.suggested_recipe = r
+
+    r = st.session_state.suggested_recipe
+    if not r:
+        st.warning("Couldn't fetch a suggestion. Try again!", icon=":material/error:")
+        if st.button("Close"):
+            st.session_state.pop("show_suggestion", None)
+            st.session_state.pop("suggested_recipe", None)
+            st.rerun()
+        return
+
+    if r.get("image_url"):
+        st.image(r["image_url"], use_container_width=True)
+    st.subheader(r["title"])
+    meta = []
+    if r.get("total_minutes"):
+        meta.append(f":material/schedule: {r['total_minutes']} min")
+    if r.get("calories_per_serving"):
+        meta.append(f":material/local_fire_department: {r['calories_per_serving']} cal")
+    if r.get("servings"):
+        meta.append(f":material/group: {r['servings']} servings")
+    if meta:
+        st.caption(" · ".join(meta))
+    if r.get("source_url"):
+        st.caption(f"[View full recipe]({r['source_url']})")
+    if r.get("ingredients"):
+        with st.expander(f"Ingredients ({len(r['ingredients'])})"):
+            for ing in r["ingredients"]:
+                st.markdown(f"- {ing}")
+
+    st.divider()
+    day_options = {d.strftime("%A, %b %d"): d for d in WEEK}
+    day_label = st.selectbox("Add to day", options=list(day_options.keys()))
+    pick_d = day_options[day_label]
+    existing = _get_slot(pick_d)
+    if existing.is_planned:
+        st.warning(f"This will replace: **{existing.display_name}**")
+
+    if st.button("Use this recipe", type="primary", use_container_width=True, icon=":material/check:"):
+        state.dinners[pick_d.isoformat()] = DinnerSlot(
+            day=pick_d.isoformat(),
+            meal_type="recipe",
+            recipe=Recipe(
+                title=r.get("title", ""),
+                source_url=r.get("source_url", ""),
+                image_url=r.get("image_url", ""),
+                ingredients=r.get("ingredients", []),
+                prep_minutes=r.get("prep_minutes"),
+                cook_minutes=r.get("cook_minutes"),
+                total_minutes=r.get("total_minutes"),
+                calories_per_serving=r.get("calories_per_serving"),
+                servings=r.get("servings"),
+                description=r.get("description", ""),
+            ),
+            note=existing.note,
+        )
+        _save()
+        st.session_state.pop("show_suggestion", None)
+        st.session_state.pop("suggested_recipe", None)
+        st.toast(f"Saved **{r['title']}** to {day_label}")
+        st.rerun()
+
+    if st.button("Cancel"):
+        st.session_state.pop("show_suggestion", None)
+        st.session_state.pop("suggested_recipe", None)
         st.rerun()
 
 
@@ -131,7 +224,7 @@ else:
 st.header(f":material/calendar_today: {week_label}")
 st.caption(f"{week_start.strftime('%b %d')} – {week_end.strftime('%b %d, %Y')}")
 
-nav_cols = st.columns([1, 1, 1])
+nav_cols = st.columns([1, 1, 1, 1])
 with nav_cols[0]:
     if st.button("Previous", icon=":material/chevron_left:", use_container_width=True):
         st.session_state.week_offset -= 1
@@ -143,6 +236,11 @@ with nav_cols[1]:
 with nav_cols[2]:
     if st.button("Next", icon=":material/chevron_right:", use_container_width=True):
         st.session_state.week_offset += 1
+        st.rerun()
+with nav_cols[3]:
+    if st.button("Suggest", icon=":material/lightbulb:", use_container_width=True, type="secondary"):
+        st.session_state.show_suggestion = True
+        st.session_state.pop("suggested_recipe", None)
         st.rerun()
 
 planned = sum(1 for d in WEEK if _get_slot(d).is_planned)
@@ -169,6 +267,9 @@ for d in WEEK:
                     st.badge("Eat out", icon=":material/restaurant:", color="orange")
                 else:
                     st.badge("Home", icon=":material/home:", color="green")
+
+        if slot.note:
+            st.caption(f":material/sticky_note_2: {slot.note}")
 
         if slot.is_planned:
             content_cols = st.columns([1, 3])
@@ -203,7 +304,7 @@ for d in WEEK:
                     st.rerun()
             with action_cols[1]:
                 if st.button("Clear", key=f"clear_{d}", icon=":material/close:", use_container_width=True):
-                    state.dinners[d.isoformat()] = DinnerSlot(day=d.isoformat())
+                    state.dinners[d.isoformat()] = DinnerSlot(day=d.isoformat(), note=slot.note)
                     _save()
                     st.toast(f"Cleared {day_label}")
                     st.rerun()
@@ -215,3 +316,6 @@ for d in WEEK:
 
 if st.session_state.get("editing_day"):
     _render_edit_form(st.session_state["editing_day"])
+
+if st.session_state.get("show_suggestion"):
+    _suggest_recipe()

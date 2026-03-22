@@ -59,6 +59,7 @@ class DinnerSlot:
     meal_type: str = "recipe"  # "recipe" or "eat_out"
     recipe: Optional[Recipe] = None
     eat_out: Optional[EatOutMeal] = None
+    note: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +67,7 @@ class DinnerSlot:
             "meal_type": self.meal_type,
             "recipe": self.recipe.to_dict() if self.recipe else None,
             "eat_out": self.eat_out.to_dict() if self.eat_out else None,
+            "note": self.note,
         }
 
     @classmethod
@@ -77,6 +79,7 @@ class DinnerSlot:
             meal_type=d.get("meal_type", "recipe"),
             recipe=recipe,
             eat_out=eat_out,
+            note=d.get("note", ""),
         )
 
     @property

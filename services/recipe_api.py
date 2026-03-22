@@ -186,6 +186,25 @@ def _parse_search_result(r: dict) -> dict:
     }
 
 
+def get_random_recipe(tags: str = "dinner") -> Optional[dict]:
+    key = _api_key()
+    if not key or key == "YOUR_SPOONACULAR_API_KEY_HERE":
+        return None
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/recipes/random",
+            params={"apiKey": key, "number": 1, "tags": tags, "includeNutrition": True},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        recipes = resp.json().get("recipes", [])
+        if recipes:
+            return _parse_search_result(recipes[0])
+        return None
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def get_recipe_detail(recipe_id: int) -> Optional[dict]:
     key = _api_key()
